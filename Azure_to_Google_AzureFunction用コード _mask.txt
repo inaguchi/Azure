@@ -1,0 +1,68 @@
+//other using statements
+using Azure.Identity;
+using Azure.Security.KeyVault.Secrets;
+using Google.Cloud.Storage.V1;
+using Google.Apis.Auth.OAuth2;
+using System;
+using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
+using System.IO;
+using System.Threading.Tasks;
+
+public static class Function1
+{
+    public static async Task RunAsync()
+    {
+        // Key Vault の情報
+        var keyVaultName = "your-key-vault-name";
+        var secretName = "your-secret-name";
+
+        // Key Vault クライアントを作成
+        var credential = new DefaultAzureCredential();
+        var keyVaultClient = new SecretClient(new Uri($"https://{keyVaultName}.vault.azure.net/"), credential);
+
+        // JSON キーファイルのシークレットを取得
+        var secret = await keyVaultClient.GetSecretAsync(secretName);
+        var jsonKeyContent = secret.Value.Value;
+
+        // Google Cloud Storage へのアップロード処理（以前のコードを続行）
+
+        // 環境変数より Azure Blob Storage の接続文字列を取得して接続
+        var blobConnection = Environment.GetEnvironmentVariable("環境変数");
+        var blobConnectionString = blobConnection;
+
+        // Storage から blobClient を生成
+        var blobClient = new BlobClient(blobConnectionString, "test", "coupons.csv");
+
+        // ファイルをダウンロードして response に格納
+        var response = await blobClient.DownloadAsync();
+
+        // ストリーム操作
+        using (var memoryStream = new MemoryStream())
+        {
+            // メモリストリームにresponseに格納されているファイルを取得し入れる
+            await response.Value.Content.CopyToAsync(memoryStream);
+            memoryStream.Position = 0;
+
+            // https://www.googleapis.com/auth/devstorage.full_control を使用して、Google Cloud Storage に対するフルコントロールを指定
+            var credential = GoogleCredential.FromJson(jsonKeyContent).CreateScoped("https://www.googleapis.com/auth/devstorage.full_control");
+
+            // credential を使用して Storage Client を生成
+            var storageClient = StorageClient.Create(credential);
+
+            try
+            {
+                // メモリストリームからuploadSream を生成
+                using (var uploadStream = new MemoryStream(memoryStream.ToArray()))
+                {
+                    // Google Cloud Storage にアップロード
+                    await storageClient.UploadObjectAsync("backet-name", "foldur/coupons.csv", null, uploadStream);
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error uploading to Google Cloud Storage: {ex.Message}, StackTrace: {ex.StackTrace}, InnerException: {ex.InnerException}");
+            }
+        }
+    }
+}
