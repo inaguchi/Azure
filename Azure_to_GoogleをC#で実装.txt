@@ -1,0 +1,57 @@
+//other using statements
+using Google.Cloud.Storage.V1;
+using Google.Apis.Auth.OAuth2;
+using System;
+using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
+using System.IO;
+using System.Threading.Tasks;
+
+public static class Function1
+{
+    public static async Task Main()
+    {
+        // jsonKeyの設定
+        var jsonKey = Path.Combine(Environment.CurrentDirectory, "your_json_key.json");
+
+        // Key情報の検証
+        // var jsonKeyPath = @"json_path\your_json_key.json";
+        // var jsonKeyContent = File.ReadAllText(jsonKeyPath);
+        // Console.WriteLine(jsonKeyContent);
+
+        // 環境変数よりAzure Blob Storageの接続文字列を取得して接続
+        var blobConnection = Environment.GetEnvironmentVariable("環境変数");
+        var blobConnectionString = blobConnection;
+
+        // StorageからblobClientを生成
+        var blobClient = new BlobClient(blobConnectionString, "test", "coupons.csv");
+
+        // ファイルをダウンロードしてresponseに格納
+        var response = await blobClient.DownloadStreamingAsync();
+
+        // テキスト情報の格納　streamで使用
+        var blobText = response.Value.Content;
+
+        // https://www.googleapis.com/auth/devstorage.full_control を使用して、Google Cloud Storageに対するフルコントロールを指定
+        var credential = GoogleCredential.FromFile(jsonKey).CreateScoped("https://www.googleapis.com/auth/devstorage.full_control");
+
+        // credentialを使用してStorage Clientを生成
+        var storageClient = StorageClient.Create(credential);
+
+        try
+        {
+            // メモリを使用してstreamを生成
+            using (var stream = new MemoryStream())
+            {
+                //Google Could Storageにアップロード
+                await blobText.CopyToAsync(stream);
+                stream.Position = 0;
+                await storageClient.UploadObjectAsync("backet-name", "test/coupons.csv", null, stream);
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error getting secret '{jsonKey}': {ex.Message} , StackTrace: {ex.StackTrace} , InnerException : {ex.InnerException}");
+        }
+    }
+}
